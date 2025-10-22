@@ -1,0 +1,40 @@
+# Query to verify the indexer data matches values from the subscan
+query VerifyIndexerData {
+  totalStakes {
+    nodes {
+      id
+      totalStakedAmount
+      totalDelegatorStake
+      totalCollatorBond
+      stakedPercentage
+      stakerCount
+      collatorCount
+      lastUpdatedBlock
+      totalSupply
+    }
+  }
+  topStakers: stakers(first: 5, orderBy: STAKED_AMOUNT_DESC) {
+    nodes {
+      id
+      stakedAmount
+      totalDelegated
+      totalUndelegated
+      lastUpdatedBlock
+    }
+  }
+  topCollators: collators(first: 5, orderBy: SELF_BOND_DESC) {
+    nodes {
+      id
+      selfBond
+      totalBonded
+      totalUnbonded
+      lastUpdatedBlock
+    }
+  }
+  stakers {
+    totalCount
+  }
+  collators {
+    totalCount
+  }
+}

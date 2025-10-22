@@ -1,0 +1,19 @@
+{
+  "outDir": "src/types",
+  "specVersions": "https://v2.archive.subsquid.io/metadata/moonbeam",
+  "typesBundle": "moonbeam",
+  "events": [
+    "ParachainStaking.Delegation",
+    "ParachainStaking.DelegationRevoked",
+    "ParachainStaking.DelegationIncreased",
+    "ParachainStaking.DelegationDecreased",
+    "ParachainStaking.DelegationKicked",
+    "ParachainStaking.Compounded",
+    "ParachainStaking.DelegatorLeft",
+    "ParachainStaking.DelegatorLeftCandidate",
+    "ParachainStaking.JoinedCollatorCandidates",
+    "ParachainStaking.CandidateBondedMore",
+    "ParachainStaking.CandidateBondedLess",
+    "ParachainStaking.CandidateLeft"
+  ]
+}

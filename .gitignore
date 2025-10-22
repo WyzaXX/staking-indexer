@@ -1,0 +1,8 @@
+node_modules/
+lib/
+builds/
+db/migrations/*.js
+.env
+.DS_Store
+*.log
+
