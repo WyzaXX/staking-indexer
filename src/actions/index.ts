@@ -27,6 +27,7 @@ export class EntityCache {
       staker = new Staker({
         id: address,
         stakedAmount: 0n,
+        scheduledUnbonds: 0n,
         totalDelegated: 0n,
         totalUndelegated: 0n,
         lastUpdatedBlock: blockNumber,
@@ -50,6 +51,7 @@ export class EntityCache {
       collator = new Collator({
         id: address,
         selfBond: 0n,
+        scheduledUnbonds: 0n,
         totalBonded: 0n,
         totalUnbonded: 0n,
         lastUpdatedBlock: blockNumber,
@@ -71,13 +73,15 @@ export class EntityCache {
       const totalSupply = config.chain.totalSupply;
       totalStake = new TotalStake({
         id: TOTAL_STAKE_ID,
+        totalStaked: 0n,
+        totalBonded: 0n,
         totalDelegatorStake: 0n,
         totalCollatorBond: 0n,
-        totalStakedAmount: 0n,
         totalSupply: totalSupply,
         stakedPercentage: 0,
-        stakerCount: 0,
-        collatorCount: 0,
+        bondedPercentage: 0,
+        activeStakerCount: 0,
+        activeCollatorCount: 0,
         lastUpdatedBlock: blockNumber,
       });
     }
@@ -127,6 +131,15 @@ async function updateStakerAmounts(
   await updateTotalStakeDelegator(cache, oldStakedAmount, staker.stakedAmount, blockNumber);
 }
 
+async function recalculateTotalStake(cache: EntityCache, blockNumber: number): Promise<void> {
+  const totalStake = await cache.getTotalStake(blockNumber);
+  totalStake.totalStaked = totalStake.totalDelegatorStake + totalStake.totalCollatorBond;
+  totalStake.totalBonded = totalStake.totalStaked;
+  totalStake.stakedPercentage = calculatePercentage(totalStake.totalStaked, totalStake.totalSupply);
+  totalStake.bondedPercentage = calculatePercentage(totalStake.totalBonded, totalStake.totalSupply);
+  totalStake.lastUpdatedBlock = blockNumber;
+}
+
 async function updateTotalStakeDelegator(
   cache: EntityCache,
   oldStakedAmount: bigint,
@@ -141,16 +154,13 @@ async function updateTotalStakeDelegator(
     totalStake.totalDelegatorStake = 0n;
   }
 
-  totalStake.totalStakedAmount = totalStake.totalDelegatorStake + totalStake.totalCollatorBond;
-  totalStake.stakedPercentage = calculatePercentage(totalStake.totalStakedAmount, totalStake.totalSupply);
-
   if (oldStakedAmount === 0n && newStakedAmount > 0n) {
-    totalStake.stakerCount += 1;
+    totalStake.activeStakerCount += 1;
   } else if (oldStakedAmount > 0n && newStakedAmount === 0n) {
-    totalStake.stakerCount -= 1;
+    totalStake.activeStakerCount -= 1;
   }
 
-  totalStake.lastUpdatedBlock = blockNumber;
+  await recalculateTotalStake(cache, blockNumber);
 }
 
 async function updateCollatorAmounts(
@@ -192,16 +202,13 @@ async function updateTotalStakeCollator(
     totalStake.totalCollatorBond = 0n;
   }
 
-  totalStake.totalStakedAmount = totalStake.totalDelegatorStake + totalStake.totalCollatorBond;
-  totalStake.stakedPercentage = calculatePercentage(totalStake.totalStakedAmount, totalStake.totalSupply);
-
   if (oldBondAmount === 0n && newBondAmount > 0n) {
-    totalStake.collatorCount += 1;
+    totalStake.activeCollatorCount += 1;
   } else if (oldBondAmount > 0n && newBondAmount === 0n) {
-    totalStake.collatorCount -= 1;
+    totalStake.activeCollatorCount -= 1;
   }
 
-  totalStake.lastUpdatedBlock = blockNumber;
+  await recalculateTotalStake(cache, blockNumber);
 }
 
 export async function handleDelegation(
@@ -223,7 +230,15 @@ export async function handleDelegationRevoked(
   amount: bigint
 ): Promise<void> {
   const staker = await cache.getStaker(delegatorBytes, blockNumber);
-  await updateStakerAmounts(cache, staker, amount, false, blockNumber);
+
+  if (staker.scheduledUnbonds >= amount) {
+    staker.scheduledUnbonds -= amount;
+  } else {
+    await updateStakerAmounts(cache, staker, amount, false, blockNumber);
+  }
+
+  staker.totalUndelegated += amount;
+  staker.lastUpdatedBlock = blockNumber;
 }
 
 export async function handleDelegationIncreased(
@@ -287,7 +302,15 @@ export async function handleCandidateBondedLess(
   amount: bigint
 ): Promise<void> {
   const collator = await cache.getCollator(candidateBytes, blockNumber);
-  await updateCollatorAmounts(cache, collator, amount, false, blockNumber);
+
+  if (collator.scheduledUnbonds >= amount) {
+    collator.scheduledUnbonds -= amount;
+  } else {
+    await updateCollatorAmounts(cache, collator, amount, false, blockNumber);
+  }
+
+  collator.totalUnbonded += amount;
+  collator.lastUpdatedBlock = blockNumber;
 }
 
 export async function handleJoinedCollatorCandidates(
@@ -308,4 +331,103 @@ export async function handleCandidateLeft(
 ): Promise<void> {
   const collator = await cache.getCollator(exCandidateBytes, blockNumber);
   await updateCollatorAmounts(cache, collator, unlockedAmount, false, blockNumber);
+}
+
+export async function handleDelegationRevocationScheduled(
+  cache: EntityCache,
+  blockNumber: number,
+  delegatorBytes: Uint8Array,
+  amount: bigint
+): Promise<void> {
+  const staker = await cache.getStaker(delegatorBytes, blockNumber);
+  staker.scheduledUnbonds += amount;
+  staker.stakedAmount -= amount;
+  if (staker.stakedAmount < 0n) {
+    staker.stakedAmount = 0n;
+  }
+  staker.lastUpdatedBlock = blockNumber;
+  const totalStake = await cache.getTotalStake(blockNumber);
+  totalStake.totalDelegatorStake -= amount;
+  if (totalStake.totalDelegatorStake < 0n) {
+    totalStake.totalDelegatorStake = 0n;
+  }
+  await recalculateTotalStake(cache, blockNumber);
+}
+
+export async function handleDelegationDecreaseScheduled(
+  cache: EntityCache,
+  blockNumber: number,
+  delegatorBytes: Uint8Array,
+  amount: bigint
+): Promise<void> {
+  const staker = await cache.getStaker(delegatorBytes, blockNumber);
+  staker.scheduledUnbonds += amount;
+  staker.stakedAmount -= amount;
+  if (staker.stakedAmount < 0n) {
+    staker.stakedAmount = 0n;
+  }
+  staker.lastUpdatedBlock = blockNumber;
+  const totalStake = await cache.getTotalStake(blockNumber);
+  totalStake.totalDelegatorStake -= amount;
+  if (totalStake.totalDelegatorStake < 0n) {
+    totalStake.totalDelegatorStake = 0n;
+  }
+  await recalculateTotalStake(cache, blockNumber);
+}
+
+export async function handleCancelledDelegationRequest(
+  cache: EntityCache,
+  blockNumber: number,
+  delegatorBytes: Uint8Array,
+  amount: bigint
+): Promise<void> {
+  const staker = await cache.getStaker(delegatorBytes, blockNumber);
+  staker.scheduledUnbonds -= amount;
+  if (staker.scheduledUnbonds < 0n) {
+    staker.scheduledUnbonds = 0n;
+  }
+  staker.stakedAmount += amount;
+  staker.lastUpdatedBlock = blockNumber;
+  const totalStake = await cache.getTotalStake(blockNumber);
+  totalStake.totalDelegatorStake += amount;
+  await recalculateTotalStake(cache, blockNumber);
+}
+
+export async function handleCandidateBondLessScheduled(
+  cache: EntityCache,
+  blockNumber: number,
+  candidateBytes: Uint8Array,
+  amount: bigint
+): Promise<void> {
+  const collator = await cache.getCollator(candidateBytes, blockNumber);
+  collator.scheduledUnbonds += amount;
+  collator.selfBond -= amount;
+  if (collator.selfBond < 0n) {
+    collator.selfBond = 0n;
+  }
+  collator.lastUpdatedBlock = blockNumber;
+  const totalStake = await cache.getTotalStake(blockNumber);
+  totalStake.totalCollatorBond -= amount;
+  if (totalStake.totalCollatorBond < 0n) {
+    totalStake.totalCollatorBond = 0n;
+  }
+  await recalculateTotalStake(cache, blockNumber);
+}
+
+export async function handleCancelledCandidateBondLess(
+  cache: EntityCache,
+  blockNumber: number,
+  candidateBytes: Uint8Array,
+  amount: bigint
+): Promise<void> {
+  const collator = await cache.getCollator(candidateBytes, blockNumber);
+  collator.scheduledUnbonds -= amount;
+  if (collator.scheduledUnbonds < 0n) {
+    collator.scheduledUnbonds = 0n;
+  }
+  collator.selfBond += amount;
+  collator.lastUpdatedBlock = blockNumber;
+  const totalStake = await cache.getTotalStake(blockNumber);
+  totalStake.totalCollatorBond += amount;
+  await recalculateTotalStake(cache, blockNumber);
 }

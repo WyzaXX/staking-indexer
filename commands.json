@@ -82,6 +82,20 @@
       "deps": ["check-updates"],
       "cmd": ["npm", "i", "-f"]
     },
+    "compare": {
+      "description": "Compare current chain state with indexer database",
+      "deps": ["build"],
+      "cmd": ["node", "--require=dotenv/config", "lib/sync-state.js"]
+    },
+    "load-state": {
+      "description": "Load current chain state into database (fixes missing initial stakes)",
+      "deps": ["build"],
+      "cmd": [
+        "sh",
+        "-c",
+        "CHAIN_RPC_ENDPOINT=\"wss://wss.api.moonbeam.network\" node --require=dotenv/config lib/load-state.js"
+      ]
+    },
     "reset": {
       "description": "Complete reset: stop DB, clean volumes, rebuild, and restart from block 0",
       "cmd": [

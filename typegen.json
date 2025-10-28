@@ -5,15 +5,20 @@
   "events": [
     "ParachainStaking.Delegation",
     "ParachainStaking.DelegationRevoked",
+    "ParachainStaking.DelegationRevocationScheduled",
     "ParachainStaking.DelegationIncreased",
     "ParachainStaking.DelegationDecreased",
+    "ParachainStaking.DelegationDecreaseScheduled",
     "ParachainStaking.DelegationKicked",
     "ParachainStaking.Compounded",
     "ParachainStaking.DelegatorLeft",
     "ParachainStaking.DelegatorLeftCandidate",
+    "ParachainStaking.CancelledDelegationRequest",
     "ParachainStaking.JoinedCollatorCandidates",
     "ParachainStaking.CandidateBondedMore",
     "ParachainStaking.CandidateBondedLess",
-    "ParachainStaking.CandidateLeft"
+    "ParachainStaking.CandidateLeft",
+    "ParachainStaking.CandidateBondLessScheduled",
+    "ParachainStaking.CancelledCandidateBondLess"
   ]
 }

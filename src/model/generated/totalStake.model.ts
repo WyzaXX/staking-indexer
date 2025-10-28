@@ -10,13 +10,16 @@ export class TotalStake {
     id!: string
 
     @BigIntColumn_({nullable: false})
+    totalStaked!: bigint
+
+    @BigIntColumn_({nullable: false})
+    totalBonded!: bigint
+
+    @BigIntColumn_({nullable: false})
     totalDelegatorStake!: bigint
 
     @BigIntColumn_({nullable: false})
     totalCollatorBond!: bigint
-
-    @BigIntColumn_({nullable: false})
-    totalStakedAmount!: bigint
 
     @BigIntColumn_({nullable: false})
     totalSupply!: bigint
@@ -24,11 +27,14 @@ export class TotalStake {
     @FloatColumn_({nullable: false})
     stakedPercentage!: number
 
-    @IntColumn_({nullable: false})
-    stakerCount!: number
+    @FloatColumn_({nullable: false})
+    bondedPercentage!: number
 
     @IntColumn_({nullable: false})
-    collatorCount!: number
+    activeStakerCount!: number
+
+    @IntColumn_({nullable: false})
+    activeCollatorCount!: number
 
     @Index_()
     @IntColumn_({nullable: false})
