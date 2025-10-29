@@ -8,6 +8,8 @@ export class EntityCache {
   private stakers = new Map<string, Staker>();
   private collators = new Map<string, Collator>();
   private totalStake: TotalStake | null = null;
+  private totalScheduledUnbonds: bigint = 0n;
+  private scheduledUnbondsLoaded: boolean = false;
   private ctx: ProcessorContext;
 
   constructor(ctx: ProcessorContext) {
@@ -134,7 +136,42 @@ async function updateStakerAmounts(
 async function recalculateTotalStake(cache: EntityCache, blockNumber: number): Promise<void> {
   const totalStake = await cache.getTotalStake(blockNumber);
   totalStake.totalStaked = totalStake.totalDelegatorStake + totalStake.totalCollatorBond;
-  totalStake.totalBonded = totalStake.totalStaked;
+
+  if (!(cache as any).scheduledUnbondsLoaded) {
+    let totalScheduledUnbonds = 0n;
+
+    const stakerEntries = Array.from((cache as any).stakers.values()) as Staker[];
+    for (const staker of stakerEntries) {
+      totalScheduledUnbonds += staker.scheduledUnbonds;
+    }
+
+    const collatorEntries = Array.from((cache as any).collators.values()) as Collator[];
+    for (const collator of collatorEntries) {
+      totalScheduledUnbonds += collator.scheduledUnbonds;
+    }
+
+    const stakerIds = new Set(stakerEntries.map((s: Staker) => s.id));
+    const collatorIds = new Set(collatorEntries.map((c: Collator) => c.id));
+
+    const dbStakers = await (cache as any).ctx.store.find(Staker);
+    for (const staker of dbStakers) {
+      if (!stakerIds.has(staker.id)) {
+        totalScheduledUnbonds += staker.scheduledUnbonds;
+      }
+    }
+
+    const dbCollators = await (cache as any).ctx.store.find(Collator);
+    for (const collator of dbCollators) {
+      if (!collatorIds.has(collator.id)) {
+        totalScheduledUnbonds += collator.scheduledUnbonds;
+      }
+    }
+
+    (cache as any).totalScheduledUnbonds = totalScheduledUnbonds;
+    (cache as any).scheduledUnbondsLoaded = true;
+  }
+
+  totalStake.totalBonded = totalStake.totalStaked + (cache as any).totalScheduledUnbonds;
   totalStake.stakedPercentage = calculatePercentage(totalStake.totalStaked, totalStake.totalSupply);
   totalStake.bondedPercentage = calculatePercentage(totalStake.totalBonded, totalStake.totalSupply);
   totalStake.lastUpdatedBlock = blockNumber;
@@ -233,12 +270,17 @@ export async function handleDelegationRevoked(
 
   if (staker.scheduledUnbonds >= amount) {
     staker.scheduledUnbonds -= amount;
+    (cache as any).totalScheduledUnbonds -= amount;
+    if ((cache as any).totalScheduledUnbonds < 0n) {
+      (cache as any).totalScheduledUnbonds = 0n;
+    }
   } else {
     await updateStakerAmounts(cache, staker, amount, false, blockNumber);
   }
 
   staker.totalUndelegated += amount;
   staker.lastUpdatedBlock = blockNumber;
+  await recalculateTotalStake(cache, blockNumber);
 }
 
 export async function handleDelegationIncreased(
@@ -305,12 +347,17 @@ export async function handleCandidateBondedLess(
 
   if (collator.scheduledUnbonds >= amount) {
     collator.scheduledUnbonds -= amount;
+    (cache as any).totalScheduledUnbonds -= amount;
+    if ((cache as any).totalScheduledUnbonds < 0n) {
+      (cache as any).totalScheduledUnbonds = 0n;
+    }
   } else {
     await updateCollatorAmounts(cache, collator, amount, false, blockNumber);
   }
 
   collator.totalUnbonded += amount;
   collator.lastUpdatedBlock = blockNumber;
+  await recalculateTotalStake(cache, blockNumber);
 }
 
 export async function handleJoinedCollatorCandidates(
@@ -351,6 +398,7 @@ export async function handleDelegationRevocationScheduled(
   if (totalStake.totalDelegatorStake < 0n) {
     totalStake.totalDelegatorStake = 0n;
   }
+  (cache as any).totalScheduledUnbonds += amount;
   await recalculateTotalStake(cache, blockNumber);
 }
 
@@ -390,6 +438,10 @@ export async function handleCancelledDelegationRequest(
   staker.lastUpdatedBlock = blockNumber;
   const totalStake = await cache.getTotalStake(blockNumber);
   totalStake.totalDelegatorStake += amount;
+  (cache as any).totalScheduledUnbonds -= amount;
+  if ((cache as any).totalScheduledUnbonds < 0n) {
+    (cache as any).totalScheduledUnbonds = 0n;
+  }
   await recalculateTotalStake(cache, blockNumber);
 }
 
@@ -411,6 +463,7 @@ export async function handleCandidateBondLessScheduled(
   if (totalStake.totalCollatorBond < 0n) {
     totalStake.totalCollatorBond = 0n;
   }
+  (cache as any).totalScheduledUnbonds += amount;
   await recalculateTotalStake(cache, blockNumber);
 }
 
@@ -429,5 +482,9 @@ export async function handleCancelledCandidateBondLess(
   collator.lastUpdatedBlock = blockNumber;
   const totalStake = await cache.getTotalStake(blockNumber);
   totalStake.totalCollatorBond += amount;
+  (cache as any).totalScheduledUnbonds -= amount;
+  if ((cache as any).totalScheduledUnbonds < 0n) {
+    (cache as any).totalScheduledUnbonds = 0n;
+  }
   await recalculateTotalStake(cache, blockNumber);
 }

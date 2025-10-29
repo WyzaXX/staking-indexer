@@ -39,7 +39,11 @@ async function retryWithBackoff<T>(
   throw lastError;
 }
 
-export async function loadCurrentChainState(rpcEndpoint: string, totalSupply: bigint): Promise<void> {
+export async function loadCurrentChainState(
+  rpcEndpoint: string,
+  totalSupply: bigint,
+  targetBlockNumber?: number
+): Promise<void> {
   console.log('Loading chain state from RPC...');
   console.log(`RPC: ${rpcEndpoint}`);
 
@@ -65,21 +69,59 @@ export async function loadCurrentChainState(rpcEndpoint: string, totalSupply: bi
       3000
     );
 
-    const header = await retryWithBackoff(
+    let blockHash: string | undefined;
+    let blockNumber: number;
+
+    if (targetBlockNumber !== undefined) {
+      blockHash = (await api.rpc.chain.getBlockHash(targetBlockNumber)).toString();
+      blockNumber = targetBlockNumber;
+      console.log(`Target block: ${blockNumber.toLocaleString()} (hash: ${blockHash.substring(0, 10)}...)`);
+    } else {
+      const header = await retryWithBackoff(
+        async () => {
+          return await api!.rpc.chain.getHeader();
+        },
+        -1,
+        3000
+      );
+      blockNumber = header.number.toNumber();
+      console.log(`Current block: ${blockNumber.toLocaleString()}`);
+    }
+
+    console.log('Fetching chain total...');
+    const chainTotal = await retryWithBackoff(
       async () => {
-        return await api!.rpc.chain.getHeader();
+        const total = blockHash
+          ? await (await api!.at(blockHash)).query.parachainStaking.total()
+          : await api!.query.parachainStaking.total();
+        const totalBigInt = BigInt(total.toString());
+        console.log(`Chain total: ${(Number(totalBigInt) / 1e18).toFixed(3)} GLMR`);
+        return totalBigInt;
       },
       -1,
-      3000
+      5000
     );
 
-    const blockNumber = header.number.toNumber();
-    console.log(`Current block: ${blockNumber.toLocaleString()}`);
+    console.log('Fetching selected candidates...');
+    const selectedCandidates = await retryWithBackoff(
+      async () => {
+        const selected = blockHash
+          ? await (await api!.at(blockHash)).query.parachainStaking.selectedCandidates()
+          : await api!.query.parachainStaking.selectedCandidates();
+        const addresses = selected.toJSON() as string[];
+        console.log(`Fetched ${addresses.length} selected candidates`);
+        return addresses;
+      },
+      -1,
+      5000
+    );
 
     console.log('Fetching delegator states...');
     const delegatorStates = await retryWithBackoff(
       async () => {
-        const states = await api!.query.parachainStaking.delegatorState.entries();
+        const states = blockHash
+          ? await (await api!.at(blockHash)).query.parachainStaking.delegatorState.entries()
+          : await api!.query.parachainStaking.delegatorState.entries();
         console.log(`Fetched ${states.length.toLocaleString()} delegators`);
         return states;
       },
@@ -90,7 +132,9 @@ export async function loadCurrentChainState(rpcEndpoint: string, totalSupply: bi
     console.log('Fetching collator candidates...');
     const candidateInfos = await retryWithBackoff(
       async () => {
-        const infos = await api!.query.parachainStaking.candidateInfo.entries();
+        const infos = blockHash
+          ? await (await api!.at(blockHash)).query.parachainStaking.candidateInfo.entries()
+          : await api!.query.parachainStaking.candidateInfo.entries();
         console.log(`Fetched ${infos.length.toLocaleString()} collators`);
         return infos;
       },
@@ -101,7 +145,9 @@ export async function loadCurrentChainState(rpcEndpoint: string, totalSupply: bi
     console.log('Fetching delegation scheduled requests...');
     const delegationRequests = await retryWithBackoff(
       async () => {
-        const requests = await api!.query.parachainStaking.delegationScheduledRequests.entries();
+        const requests = blockHash
+          ? await (await api!.at(blockHash)).query.parachainStaking.delegationScheduledRequests.entries()
+          : await api!.query.parachainStaking.delegationScheduledRequests.entries();
         console.log(`Fetched ${requests.length.toLocaleString()} scheduled delegation requests`);
         return requests;
       },
@@ -110,12 +156,28 @@ export async function loadCurrentChainState(rpcEndpoint: string, totalSupply: bi
     );
 
     const delegatorScheduledUnbonds = new Map<string, bigint>();
+    let totalDelegatorScheduledAmount = 0n;
     for (const [key, value] of delegationRequests) {
+      const collatorAddress = key.args[0].toU8a();
       const requests = value.toJSON() as any[];
       if (requests && Array.isArray(requests)) {
         for (const request of requests) {
           if (request && request.delegator && request.action) {
-            const delegatorAddress = request.delegator;
+            const delegatorAddressHex = request.delegator;
+            let delegatorId: string;
+
+            if (typeof delegatorAddressHex === 'string' && delegatorAddressHex.startsWith('0x')) {
+              const delegatorBytes = new Uint8Array(
+                delegatorAddressHex
+                  .slice(2)
+                  .match(/.{1,2}/g)!
+                  .map((byte: string) => parseInt(byte, 16))
+              );
+              delegatorId = encodeAddressToSS58(delegatorBytes);
+            } else {
+              delegatorId = delegatorAddressHex;
+            }
+
             let amount = 0n;
 
             if (request.action.revoke) {
@@ -125,13 +187,19 @@ export async function loadCurrentChainState(rpcEndpoint: string, totalSupply: bi
             }
 
             if (amount > 0n) {
-              const current = delegatorScheduledUnbonds.get(delegatorAddress) || 0n;
-              delegatorScheduledUnbonds.set(delegatorAddress, current + amount);
+              const current = delegatorScheduledUnbonds.get(delegatorId) || 0n;
+              delegatorScheduledUnbonds.set(delegatorId, current + amount);
+              totalDelegatorScheduledAmount += amount;
             }
           }
         }
       }
     }
+    console.log(
+      `Total scheduled unbonds from delegators: ${(Number(totalDelegatorScheduledAmount) / 1e18).toFixed(
+        3
+      )} GLMR from ${delegatorScheduledUnbonds.size} delegators`
+    );
 
     const collatorScheduledUnbonds = new Map<string, bigint>();
 
@@ -144,7 +212,9 @@ export async function loadCurrentChainState(rpcEndpoint: string, totalSupply: bi
         console.log('Fetching candidate bond less requests...');
         const candidateBondRequests = await retryWithBackoff(
           async () => {
-            const requests = await api!.query.parachainStaking.candidateBondLessScheduledRequests!.entries();
+            const requests = blockHash
+              ? await (await api!.at(blockHash)).query.parachainStaking.candidateBondLessScheduledRequests!.entries()
+              : await api!.query.parachainStaking.candidateBondLessScheduledRequests!.entries();
             console.log(`Fetched ${requests.length.toLocaleString()} candidate bond less requests`);
             return requests;
           },
@@ -237,86 +307,191 @@ export async function loadCurrentChainState(rpcEndpoint: string, totalSupply: bi
       }
     }
 
-    let totalScheduledUnbonds = 0n;
-    for (const staker of stakers) {
-      totalScheduledUnbonds += staker.scheduledUnbonds;
+    console.log('Calculating active stake from top delegations...');
+    let activeStake = 0n;
+    let activeCollatorBonds = 0n;
+
+    for (const candidateAddress of selectedCandidates) {
+      const topDelegations = blockHash
+        ? await (await api!.at(blockHash)).query.parachainStaking.topDelegations(candidateAddress)
+        : await api!.query.parachainStaking.topDelegations(candidateAddress);
+      const topData = topDelegations.toJSON() as any;
+
+      if (topData && topData.delegations) {
+        for (const delegation of topData.delegations) {
+          activeStake += BigInt(delegation.amount);
+        }
+      }
+
+      const candidateInfo = blockHash
+        ? await (await api!.at(blockHash)).query.parachainStaking.candidateInfo(candidateAddress)
+        : await api!.query.parachainStaking.candidateInfo(candidateAddress);
+      const info = candidateInfo.toJSON() as any;
+      if (info && info.bond) {
+        activeCollatorBonds += BigInt(info.bond);
+      }
     }
-    for (const collator of collators) {
-      totalScheduledUnbonds += collator.scheduledUnbonds;
-    }
-    const totalStaked = totalDelegatorStake + totalCollatorBond;
-    const totalBonded = totalStaked + totalScheduledUnbonds;
+
+    console.log(
+      `Active stake (earning rewards): ${(Number(activeStake + activeCollatorBonds) / 1e18).toFixed(3)} GLMR`
+    );
+    console.log(`  - Delegations: ${(Number(activeStake) / 1e18).toFixed(3)} GLMR`);
+    console.log(`  - Collator bonds: ${(Number(activeCollatorBonds) / 1e18).toFixed(3)} GLMR`);
+
+    const totalStaked = activeStake + activeCollatorBonds;
+    const totalBonded = chainTotal;
 
     const totalStake = new TotalStake();
     totalStake.id = 'total';
     totalStake.totalStaked = totalStaked;
     totalStake.totalBonded = totalBonded;
-    totalStake.totalDelegatorStake = totalDelegatorStake;
-    totalStake.totalCollatorBond = totalCollatorBond;
+    totalStake.totalDelegatorStake = activeStake;
+    totalStake.totalCollatorBond = activeCollatorBonds;
     totalStake.totalSupply = totalSupply;
     totalStake.stakedPercentage = calculatePercentage(totalStaked, totalSupply);
     totalStake.bondedPercentage = calculatePercentage(totalBonded, totalSupply);
     totalStake.activeStakerCount = stakers.length;
-    totalStake.activeCollatorCount = collators.length;
+    totalStake.activeCollatorCount = selectedCandidates.length;
     totalStake.lastUpdatedBlock = blockNumber;
 
-    console.log('Writing to database...');
+    console.log('Comparing with existing database...');
 
-    if (stakers.length > 0) {
-      console.log(`Saving ${stakers.length.toLocaleString()} stakers...`);
-      const batchSize = 1000;
-      for (let i = 0; i < stakers.length; i += batchSize) {
-        const batch = stakers.slice(i, Math.min(i + batchSize, stakers.length));
+    const existingStakers = await dataSource.query(`SELECT id FROM staker`);
+    const existingStakerIds = new Set<string>(existingStakers.map((row: any) => row.id));
 
-        for (const staker of batch) {
-          await dataSource.query(
-            `INSERT INTO staker (id, staked_amount, scheduled_unbonds, total_delegated, total_undelegated, last_updated_block)
-            VALUES ($1, $2, $3, $4, $5, $6)
-            ON CONFLICT (id) DO UPDATE SET
-              staked_amount = EXCLUDED.staked_amount,
-              scheduled_unbonds = EXCLUDED.scheduled_unbonds,
-              total_delegated = EXCLUDED.total_delegated,
-              total_undelegated = EXCLUDED.total_undelegated,
-              last_updated_block = EXCLUDED.last_updated_block`,
-            [
-              staker.id,
-              staker.stakedAmount.toString(),
-              staker.scheduledUnbonds.toString(),
-              staker.totalDelegated.toString(),
-              staker.totalUndelegated.toString(),
-              staker.lastUpdatedBlock,
-            ]
-          );
-        }
+    const stakersToInsert: Staker[] = [];
+    const stakersToUpdate: Staker[] = [];
 
-        const progress = Math.min(i + batchSize, stakers.length);
-        console.log(`${progress.toLocaleString()} / ${stakers.length.toLocaleString()} stakers saved`);
+    for (const staker of stakers) {
+      if (!existingStakerIds.has(staker.id)) {
+        stakersToInsert.push(staker);
+      } else {
+        stakersToUpdate.push(staker);
       }
     }
 
-    if (collators.length > 0) {
-      console.log(`Saving ${collators.length.toLocaleString()} collators...`);
-      for (const collator of collators) {
+    console.log(
+      `Stakers: ${stakersToInsert.length} new (missing from event-driven data), ${stakersToUpdate.length} to update with scheduled unbonds`
+    );
+
+    if (stakersToInsert.length > 0) {
+      console.log(`Inserting ${stakersToInsert.length.toLocaleString()} new stakers...`);
+      const batchSize = 500;
+      for (let i = 0; i < stakersToInsert.length; i += batchSize) {
+        const batch = stakersToInsert.slice(i, Math.min(i + batchSize, stakersToInsert.length));
+
+        const values: string[] = [];
+        const params: any[] = [];
+        let paramIndex = 1;
+
+        for (const staker of batch) {
+          values.push(
+            `($${paramIndex}, $${paramIndex + 1}, $${paramIndex + 2}, $${paramIndex + 3}, $${paramIndex + 4}, $${
+              paramIndex + 5
+            })`
+          );
+          params.push(
+            staker.id,
+            staker.stakedAmount.toString(),
+            staker.scheduledUnbonds.toString(),
+            staker.totalDelegated.toString(),
+            staker.totalUndelegated.toString(),
+            staker.lastUpdatedBlock
+          );
+          paramIndex += 6;
+        }
+
         await dataSource.query(
-          `INSERT INTO collator (id, self_bond, scheduled_unbonds, total_bonded, total_unbonded, last_updated_block)
-          VALUES ($1, $2, $3, $4, $5, $6)
-          ON CONFLICT (id) DO UPDATE SET
-            self_bond = EXCLUDED.self_bond,
-            scheduled_unbonds = EXCLUDED.scheduled_unbonds,
-            total_bonded = EXCLUDED.total_bonded,
-            total_unbonded = EXCLUDED.total_unbonded,
-            last_updated_block = EXCLUDED.last_updated_block`,
-          [
-            collator.id,
-            collator.selfBond.toString(),
-            collator.scheduledUnbonds.toString(),
-            collator.totalBonded.toString(),
-            collator.totalUnbonded.toString(),
-            collator.lastUpdatedBlock,
-          ]
+          `INSERT INTO staker (id, staked_amount, scheduled_unbonds, total_delegated, total_undelegated, last_updated_block)
+          VALUES ${values.join(', ')}`,
+          params
         );
+
+        const progress = Math.min(i + batchSize, stakersToInsert.length);
+        console.log(`${progress.toLocaleString()} / ${stakersToInsert.length.toLocaleString()} new stakers inserted`);
       }
-      console.log(`All ${collators.length.toLocaleString()} collators saved`);
+    }
+
+    if (stakersToUpdate.length > 0) {
+      console.log(`Updating ${stakersToUpdate.length.toLocaleString()} existing stakers with scheduled unbonds...`);
+      const batchSize = 500;
+      for (let i = 0; i < stakersToUpdate.length; i += batchSize) {
+        const batch = stakersToUpdate.slice(i, Math.min(i + batchSize, stakersToUpdate.length));
+
+        for (const staker of batch) {
+          await dataSource.query(`UPDATE staker SET scheduled_unbonds = $1 WHERE id = $2`, [
+            staker.scheduledUnbonds.toString(),
+            staker.id,
+          ]);
+        }
+
+        const progress = Math.min(i + batchSize, stakersToUpdate.length);
+        console.log(`${progress.toLocaleString()} / ${stakersToUpdate.length.toLocaleString()} stakers updated`);
+      }
+    }
+
+    const existingCollators = await dataSource.query(`SELECT id FROM collator`);
+    const existingCollatorIds = new Set<string>(existingCollators.map((row: any) => row.id));
+
+    const collatorsToInsert: Collator[] = [];
+    const collatorsToUpdate: Collator[] = [];
+
+    for (const collator of collators) {
+      if (!existingCollatorIds.has(collator.id)) {
+        collatorsToInsert.push(collator);
+      } else {
+        collatorsToUpdate.push(collator);
+      }
+    }
+
+    console.log(
+      `Collators: ${collatorsToInsert.length} new (missing from event-driven data), ${collatorsToUpdate.length} to update with scheduled unbonds`
+    );
+
+    if (collatorsToInsert.length > 0) {
+      console.log(`Inserting ${collatorsToInsert.length.toLocaleString()} new collators...`);
+
+      const values: string[] = [];
+      const params: any[] = [];
+      let paramIndex = 1;
+
+      for (const collator of collatorsToInsert) {
+        values.push(
+          `($${paramIndex}, $${paramIndex + 1}, $${paramIndex + 2}, $${paramIndex + 3}, $${paramIndex + 4}, $${
+            paramIndex + 5
+          })`
+        );
+        params.push(
+          collator.id,
+          collator.selfBond.toString(),
+          collator.scheduledUnbonds.toString(),
+          collator.totalBonded.toString(),
+          collator.totalUnbonded.toString(),
+          collator.lastUpdatedBlock
+        );
+        paramIndex += 6;
+      }
+
+      await dataSource.query(
+        `INSERT INTO collator (id, self_bond, scheduled_unbonds, total_bonded, total_unbonded, last_updated_block)
+        VALUES ${values.join(', ')}`,
+        params
+      );
+
+      console.log(`All ${collatorsToInsert.length.toLocaleString()} new collators inserted`);
+    }
+
+    if (collatorsToUpdate.length > 0) {
+      console.log(`Updating ${collatorsToUpdate.length.toLocaleString()} existing collators with scheduled unbonds...`);
+
+      for (const collator of collatorsToUpdate) {
+        await dataSource.query(`UPDATE collator SET scheduled_unbonds = $1 WHERE id = $2`, [
+          collator.scheduledUnbonds.toString(),
+          collator.id,
+        ]);
+      }
+
+      console.log(`All ${collatorsToUpdate.length} collators updated`);
     }
 
     await dataSource.query(
@@ -349,18 +524,24 @@ export async function loadCurrentChainState(rpcEndpoint: string, totalSupply: bi
       ]
     );
 
-    console.log('Chain state loaded successfully');
+    console.log('\nChain state merge completed');
     console.log(`Block: ${blockNumber.toLocaleString()}`);
+    console.log(`\nMissing data inserted: ${stakersToInsert.length} stakers, ${collatorsToInsert.length} collators`);
     console.log(
-      `Delegators: ${stakers.length.toLocaleString()} (${(Number(totalDelegatorStake) / 1e18).toLocaleString()} GLMR)`
+      `Event-driven data preserved: ${stakers.length - stakersToInsert.length} stakers, ${
+        collators.length - collatorsToInsert.length
+      } collators`
     );
     console.log(
-      `Collators: ${collators.length.toLocaleString()} (${(Number(totalCollatorBond) / 1e18).toLocaleString()} GLMR)`
+      `\nTotal Staked: ${(
+        Number(totalStake.totalStaked) / 1e18
+      ).toLocaleString()} GLMR (${totalStake.stakedPercentage.toFixed(2)}%)`
     );
-    console.log(`Total Staked: ${(Number(totalStake.totalStaked) / 1e18).toLocaleString()} GLMR`);
-    console.log(`Total Bonded: ${(Number(totalStake.totalBonded) / 1e18).toLocaleString()} GLMR`);
-    console.log(`Staked %: ${totalStake.stakedPercentage.toFixed(2)}%`);
-    console.log(`Bonded %: ${totalStake.bondedPercentage.toFixed(2)}%`);
+    console.log(
+      `Total Bonded: ${(
+        Number(totalStake.totalBonded) / 1e18
+      ).toLocaleString()} GLMR (${totalStake.bondedPercentage.toFixed(2)}%)`
+    );
 
     await dataSource.destroy();
   } catch (error) {

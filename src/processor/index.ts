@@ -116,9 +116,10 @@ async function runWithArchiveFallback() {
           }
 
           const totalSupply = BigInt(process.env.TOTAL_SUPPLY || '1200000000000000000000000000');
+          const targetBlock = lastBlock;
 
           try {
-            await loadCurrentChainState(wsEndpoint, totalSupply);
+            await loadCurrentChainState(wsEndpoint, totalSupply, targetBlock);
             stateMerged = true;
             console.log('Chain state merged successfully, continuing indexing...');
             console.log('');
