@@ -1,16 +1,17 @@
-# Query to verify the indexer data matches values from the subscan
 query VerifyIndexerData {
   totalStakes {
     nodes {
       id
-      totalStakedAmount
+      totalStaked
+      totalBonded
       totalDelegatorStake
       totalCollatorBond
-      stakedPercentage
-      stakerCount
-      collatorCount
-      lastUpdatedBlock
       totalSupply
+      stakedPercentage
+      bondedPercentage
+      activeStakerCount
+      activeCollatorCount
+      lastUpdatedBlock
     }
   }
   topStakers: stakers(first: 5, orderBy: STAKED_AMOUNT_DESC) {

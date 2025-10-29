@@ -4,6 +4,7 @@ import { config } from '../utils';
 import { fieldSelection, ProcessorContext } from './types';
 import { handleEvent } from '../handlers';
 import { EntityCache } from '../actions';
+import { loadCurrentChainState } from '../state-loader';
 
 const ARCHIVE_GATEWAYS: Record<string, string> = {
   moonbeam: 'https://v2.archive.subsquid.io/network/moonbeam-substrate',
@@ -13,8 +14,12 @@ let archiveFailureCount = 0;
 let useArchive = true;
 let lastArchiveRetryTime = 0;
 const ARCHIVE_FAILURE_THRESHOLD = 3;
-const ARCHIVE_RETRY_INTERVAL = 5 * 60 * 1000; // 5 minutes
-const HISTORICAL_BLOCK_THRESHOLD = 100; // Considered "historical" if more than 100 blocks behind
+const ARCHIVE_RETRY_INTERVAL = 5 * 60 * 1000;
+const HISTORICAL_BLOCK_THRESHOLD = 100;
+const LIVE_MODE_THRESHOLD = 50;
+let stateMerged = false;
+let lastChainHeightCheck = 0;
+const CHAIN_HEIGHT_CHECK_INTERVAL = 60 * 1000;
 
 function createProcessor(withArchive: boolean): SubstrateBatchProcessor {
   const proc = new SubstrateBatchProcessor()
@@ -47,16 +52,21 @@ function createProcessor(withArchive: boolean): SubstrateBatchProcessor {
     name: [
       'ParachainStaking.Delegation',
       'ParachainStaking.DelegationRevoked',
+      'ParachainStaking.DelegationRevocationScheduled',
       'ParachainStaking.DelegationIncreased',
       'ParachainStaking.DelegationDecreased',
+      'ParachainStaking.DelegationDecreaseScheduled',
       'ParachainStaking.DelegationKicked',
       'ParachainStaking.Compounded',
       'ParachainStaking.DelegatorLeft',
       'ParachainStaking.DelegatorLeftCandidate',
+      'ParachainStaking.CancelledDelegationRequest',
       'ParachainStaking.JoinedCollatorCandidates',
       'ParachainStaking.CandidateBondedMore',
       'ParachainStaking.CandidateBondedLess',
       'ParachainStaking.CandidateLeft',
+      'ParachainStaking.CandidateBondLessScheduled',
+      'ParachainStaking.CancelledCandidateBondLess',
     ],
     extrinsic: true,
   });
@@ -87,6 +97,36 @@ async function runWithArchiveFallback() {
           useArchive = true;
           processor = createProcessor(true);
           throw new Error('RESTART_WITH_ARCHIVE');
+        }
+      }
+
+      if (!stateMerged && blockRange <= LIVE_MODE_THRESHOLD) {
+        const now = Date.now();
+        if (now - lastChainHeightCheck > CHAIN_HEIGHT_CHECK_INTERVAL) {
+          lastChainHeightCheck = now;
+
+          console.log('');
+          console.log(`Live mode detected (batch size: ${blockRange}), merging chain state...`);
+
+          let wsEndpoint = config.chain.rpcEndpoint;
+          if (wsEndpoint.startsWith('http://')) {
+            wsEndpoint = wsEndpoint.replace('http://', 'ws://');
+          } else if (wsEndpoint.startsWith('https://')) {
+            wsEndpoint = wsEndpoint.replace('https://', 'wss://');
+          }
+
+          const totalSupply = BigInt(process.env.TOTAL_SUPPLY || '1200000000000000000000000000');
+          const targetBlock = lastBlock;
+
+          try {
+            await loadCurrentChainState(wsEndpoint, totalSupply, targetBlock);
+            stateMerged = true;
+            console.log('Chain state merged successfully, continuing indexing...');
+            console.log('');
+          } catch (error: any) {
+            console.error('Failed to merge chain state:', error.message);
+            console.error('Continuing without merge...');
+          }
         }
       }
 

@@ -13,6 +13,9 @@ export class Collator {
     selfBond!: bigint
 
     @BigIntColumn_({nullable: false})
+    scheduledUnbonds!: bigint
+
+    @BigIntColumn_({nullable: false})
     totalBonded!: bigint
 
     @BigIntColumn_({nullable: false})

@@ -13,6 +13,9 @@ export class Staker {
     stakedAmount!: bigint
 
     @BigIntColumn_({nullable: false})
+    scheduledUnbonds!: bigint
+
+    @BigIntColumn_({nullable: false})
     totalDelegated!: bigint
 
     @BigIntColumn_({nullable: false})

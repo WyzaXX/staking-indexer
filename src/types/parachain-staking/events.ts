@@ -3,6 +3,7 @@ import * as v900 from '../v900'
 import * as v1001 from '../v1001'
 import * as v1201 from '../v1201'
 import * as v1300 from '../v1300'
+import * as v1502 from '../v1502'
 import * as v1901 from '../v1901'
 
 export const joinedCollatorCandidates =  {
@@ -71,6 +72,28 @@ export const candidateBondedLess =  {
     ),
 }
 
+export const cancelledCandidateBondLess =  {
+    name: 'ParachainStaking.CancelledCandidateBondLess',
+    /**
+     * Candidate, Amount, Round at which could be executed
+     */
+    v1001: new EventType(
+        'ParachainStaking.CancelledCandidateBondLess',
+        sts.tuple([v1001.AccountId20, sts.bigint(), sts.number()])
+    ),
+    /**
+     * Cancelled request to decrease candidate's bond.
+     */
+    v1300: new EventType(
+        'ParachainStaking.CancelledCandidateBondLess',
+        sts.struct({
+            candidate: v1300.AccountId20,
+            amount: sts.bigint(),
+            executeRound: sts.number(),
+        })
+    ),
+}
+
 export const candidateLeft =  {
     name: 'ParachainStaking.CandidateLeft',
     /**
@@ -89,6 +112,29 @@ export const candidateLeft =  {
             exCandidate: v1300.AccountId20,
             unlockedAmount: sts.bigint(),
             newTotalAmtLocked: sts.bigint(),
+        })
+    ),
+}
+
+export const delegationDecreaseScheduled =  {
+    name: 'ParachainStaking.DelegationDecreaseScheduled',
+    /**
+     * Delegator, Candidate, Amount to be decreased, Round at which can be executed
+     */
+    v1001: new EventType(
+        'ParachainStaking.DelegationDecreaseScheduled',
+        sts.tuple([v1001.AccountId20, v1001.AccountId20, sts.bigint(), sts.number()])
+    ),
+    /**
+     * Delegator requested to decrease a bond for the collator candidate.
+     */
+    v1300: new EventType(
+        'ParachainStaking.DelegationDecreaseScheduled',
+        sts.struct({
+            delegator: v1300.AccountId20,
+            candidate: v1300.AccountId20,
+            amountToDecrease: sts.bigint(),
+            executeRound: sts.number(),
         })
     ),
 }
@@ -123,6 +169,29 @@ export const delegationDecreased =  {
             candidate: v1300.AccountId20,
             amount: sts.bigint(),
             inTop: sts.boolean(),
+        })
+    ),
+}
+
+export const delegationRevocationScheduled =  {
+    name: 'ParachainStaking.DelegationRevocationScheduled',
+    /**
+     * Round, Delegator, Candidate, Scheduled Exit
+     */
+    v1001: new EventType(
+        'ParachainStaking.DelegationRevocationScheduled',
+        sts.tuple([sts.number(), v1001.AccountId20, v1001.AccountId20, sts.number()])
+    ),
+    /**
+     * Delegator requested to revoke delegation.
+     */
+    v1300: new EventType(
+        'ParachainStaking.DelegationRevocationScheduled',
+        sts.struct({
+            round: sts.number(),
+            delegator: v1300.AccountId20,
+            candidate: v1300.AccountId20,
+            scheduledExit: sts.number(),
         })
     ),
 }
@@ -166,6 +235,38 @@ export const delegationRevoked =  {
             delegator: v1300.AccountId20,
             candidate: v1300.AccountId20,
             unstakedAmount: sts.bigint(),
+        })
+    ),
+}
+
+export const cancelledDelegationRequest =  {
+    name: 'ParachainStaking.CancelledDelegationRequest',
+    /**
+     * Delegator, Cancelled Request
+     */
+    v1001: new EventType(
+        'ParachainStaking.CancelledDelegationRequest',
+        sts.tuple([v1001.AccountId20, v1001.DelegationRequest])
+    ),
+    /**
+     * Cancelled request to change an existing delegation.
+     */
+    v1300: new EventType(
+        'ParachainStaking.CancelledDelegationRequest',
+        sts.struct({
+            delegator: v1300.AccountId20,
+            cancelledRequest: v1300.DelegationRequest,
+        })
+    ),
+    /**
+     * Cancelled request to change an existing delegation.
+     */
+    v1502: new EventType(
+        'ParachainStaking.CancelledDelegationRequest',
+        sts.struct({
+            delegator: v1502.AccountId20,
+            cancelledRequest: v1502.CancelledScheduledRequest,
+            collator: v1502.AccountId20,
         })
     ),
 }

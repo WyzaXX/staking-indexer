@@ -50,11 +50,13 @@ GraphiQL interface: http://localhost:4350/graphiql
 
 ## Commands
 
-| Command     | Description             |
-| ----------- | ----------------------- |
-| `sqd serve` | Start processor + API   |
-| `sqd reset` | Full reset from block 0 |
-| `sqd open`  | Open GraphiQL interface |
+| Command          | Description                     |
+| ---------------- | ------------------------------- |
+| `sqd serve`      | Start processor + API           |
+| `sqd reset`      | Full reset from block 0         |
+| `sqd load-state` | Manually load chain state to DB |
+| `sqd compare`    | Compare DB with chain state     |
+| `sqd open`       | Open GraphiQL interface         |
 
 See `commands.json` for all available commands.
 
