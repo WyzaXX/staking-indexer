@@ -1,7 +1,7 @@
 import { ApiPromise, WsProvider } from '@polkadot/api';
 import { DataSource } from 'typeorm';
 import { Staker, Collator, TotalStake } from './model';
-import { calculatePercentage, encodeAddressToSS58 } from './utils';
+import { calculatePercentage, encodeAddressToSS58, getTokenSymbol } from './utils';
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -44,6 +44,7 @@ export async function loadCurrentChainState(
   totalSupply: bigint,
   targetBlockNumber?: number
 ): Promise<void> {
+  const tokenSymbol = getTokenSymbol();
   console.log('Loading chain state from RPC...');
   console.log(`RPC: ${rpcEndpoint}`);
 
@@ -95,7 +96,7 @@ export async function loadCurrentChainState(
           ? await (await api!.at(blockHash)).query.parachainStaking.total()
           : await api!.query.parachainStaking.total();
         const totalBigInt = BigInt(total.toString());
-        console.log(`Chain total: ${(Number(totalBigInt) / 1e18).toFixed(3)} GLMR`);
+        console.log(`Chain total: ${(Number(totalBigInt) / 1e18).toFixed(3)} ${tokenSymbol}`);
         return totalBigInt;
       },
       -1,
@@ -198,7 +199,7 @@ export async function loadCurrentChainState(
     console.log(
       `Total scheduled unbonds from delegators: ${(Number(totalDelegatorScheduledAmount) / 1e18).toFixed(
         3
-      )} GLMR from ${delegatorScheduledUnbonds.size} delegators`
+      )} ${tokenSymbol} from ${delegatorScheduledUnbonds.size} delegators`
     );
 
     const collatorScheduledUnbonds = new Map<string, bigint>();
@@ -333,10 +334,10 @@ export async function loadCurrentChainState(
     }
 
     console.log(
-      `Active stake (earning rewards): ${(Number(activeStake + activeCollatorBonds) / 1e18).toFixed(3)} GLMR`
+      `Active stake (earning rewards): ${(Number(activeStake + activeCollatorBonds) / 1e18).toFixed(3)} ${tokenSymbol}`
     );
-    console.log(`  - Delegations: ${(Number(activeStake) / 1e18).toFixed(3)} GLMR`);
-    console.log(`  - Collator bonds: ${(Number(activeCollatorBonds) / 1e18).toFixed(3)} GLMR`);
+    console.log(`  - Delegations: ${(Number(activeStake) / 1e18).toFixed(3)} ${tokenSymbol}`);
+    console.log(`  - Collator bonds: ${(Number(activeCollatorBonds) / 1e18).toFixed(3)} ${tokenSymbol}`);
 
     const totalStaked = activeStake + activeCollatorBonds;
     const totalBonded = chainTotal;
@@ -535,12 +536,12 @@ export async function loadCurrentChainState(
     console.log(
       `\nTotal Staked: ${(
         Number(totalStake.totalStaked) / 1e18
-      ).toLocaleString()} GLMR (${totalStake.stakedPercentage.toFixed(2)}%)`
+      ).toLocaleString()} ${tokenSymbol} (${totalStake.stakedPercentage.toFixed(2)}%)`
     );
     console.log(
       `Total Bonded: ${(
         Number(totalStake.totalBonded) / 1e18
-      ).toLocaleString()} GLMR (${totalStake.bondedPercentage.toFixed(2)}%)`
+      ).toLocaleString()} ${tokenSymbol} (${totalStake.bondedPercentage.toFixed(2)}%)`
     );
 
     await dataSource.destroy();

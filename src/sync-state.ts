@@ -7,7 +7,7 @@ async function main() {
   let rpcEndpoint = process.env.CHAIN_RPC_ENDPOINT;
 
   if (!rpcEndpoint) {
-    console.error('❌ CHAIN_RPC_ENDPOINT not set in .env');
+    console.error('CHAIN_RPC_ENDPOINT not set in .env');
     process.exit(1);
   }
 

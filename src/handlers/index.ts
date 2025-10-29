@@ -1,4 +1,4 @@
-import { ProcessorContext, Event, Block } from '../processor/types';
+import { Event, Block } from '../processor/types';
 import {
   handleDelegation,
   handleDelegationRevoked,
@@ -20,7 +20,7 @@ interface EventItem {
   block: Block;
 }
 
-function decodeScheduledEvent(event: Event, eventName: string): { delegator: Uint8Array; amount: bigint } | null {
+function decodeScheduledEvent(event: Event): { delegator: Uint8Array; amount: bigint } | null {
   if (!event.args) return null;
   try {
     const args = event.args as any;
@@ -34,10 +34,7 @@ function decodeScheduledEvent(event: Event, eventName: string): { delegator: Uin
   }
 }
 
-function decodeCollatorScheduledEvent(
-  event: Event,
-  eventName: string
-): { candidate: Uint8Array; amount: bigint } | null {
+function decodeCollatorScheduledEvent(event: Event): { candidate: Uint8Array; amount: bigint } | null {
   if (!event.args) return null;
   try {
     const args = event.args as any;
@@ -191,7 +188,7 @@ export async function handleEvent(cache: any, item: EventItem): Promise<void> {
     }
 
     case 'ParachainStaking.DelegationRevocationScheduled': {
-      const data = decodeScheduledEvent(event, 'DelegationRevocationScheduled');
+      const data = decodeScheduledEvent(event);
       if (data) {
         await handleDelegationRevocationScheduled(cache, blockNumber, data.delegator, data.amount);
       }
@@ -199,7 +196,7 @@ export async function handleEvent(cache: any, item: EventItem): Promise<void> {
     }
 
     case 'ParachainStaking.DelegationDecreaseScheduled': {
-      const data = decodeScheduledEvent(event, 'DelegationDecreaseScheduled');
+      const data = decodeScheduledEvent(event);
       if (data) {
         await handleDelegationDecreaseScheduled(cache, blockNumber, data.delegator, data.amount);
       }
@@ -207,7 +204,7 @@ export async function handleEvent(cache: any, item: EventItem): Promise<void> {
     }
 
     case 'ParachainStaking.CancelledDelegationRequest': {
-      const data = decodeScheduledEvent(event, 'CancelledDelegationRequest');
+      const data = decodeScheduledEvent(event);
       if (data) {
         await handleCancelledDelegationRequest(cache, blockNumber, data.delegator, data.amount);
       }
@@ -215,7 +212,7 @@ export async function handleEvent(cache: any, item: EventItem): Promise<void> {
     }
 
     case 'ParachainStaking.CandidateBondLessScheduled': {
-      const data = decodeCollatorScheduledEvent(event, 'CandidateBondLessScheduled');
+      const data = decodeCollatorScheduledEvent(event);
       if (data) {
         await handleCandidateBondLessScheduled(cache, blockNumber, data.candidate, data.amount);
       }
@@ -223,7 +220,7 @@ export async function handleEvent(cache: any, item: EventItem): Promise<void> {
     }
 
     case 'ParachainStaking.CancelledCandidateBondLess': {
-      const data = decodeCollatorScheduledEvent(event, 'CancelledCandidateBondLess');
+      const data = decodeCollatorScheduledEvent(event);
       if (data) {
         await handleCancelledCandidateBondLess(cache, blockNumber, data.candidate, data.amount);
       }

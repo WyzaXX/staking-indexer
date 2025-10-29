@@ -48,34 +48,6 @@ sqd serve                 # Start processor + API
 
 GraphiQL interface: http://localhost:4350/graphiql
 
-## How It Works
-
-### First Run (Fresh Start)
-
-When starting with an empty database from block 0, the indexer performs a **fully automatic initialization**:
-
-1. **⏸️ Waits** - The indexer pauses before starting event processing
-2. **📡 Loads Chain State** - Fetches current staking data directly from RPC (~14,000 delegators + collators)
-3. **🔄 Auto-Retry** - If RPC fails, it retries automatically with exponential backoff (up to 30s between attempts)
-4. **💾 Saves to Database** - Stores the current accurate state
-5. **✅ Starts Indexing** - Only after state is loaded successfully, begins processing events from block 0
-
-**Why this matters:**
-
-- ParachainStaking wasn't active at genesis on Moonbeam
-- Early delegations (blocks 0-150,000) wouldn't be captured by events alone
-- This ensures your totals match chain state from the start
-
-**Time:**
-
-- With private RPC: 1-2 minutes
-- With public RPC: 2-10 minutes (due to retries)
-- **It will keep trying until it succeeds** ✅
-
-### Subsequent Runs
-
-Normal incremental indexing - processes only new events from where it left off.
-
 ## Commands
 
 | Command          | Description                     |
@@ -87,35 +59,6 @@ Normal incremental indexing - processes only new events from where it left off.
 | `sqd open`       | Open GraphiQL interface         |
 
 See `commands.json` for all available commands.
-
-## Troubleshooting
-
-### WebSocket Disconnections During State Loading
-
-If you see repeated `API-WS: disconnected... 1006:: Abnormal Closure` errors:
-
-**Cause**: Public RPCs have strict rate limits and connection timeouts. Loading ~14,000 delegator states can exceed these limits.
-
-**Solutions**:
-
-1. **Use a private/paid RPC endpoint** (recommended):
-
-   - OnFinality: https://onfinality.io
-   - Blast API: https://blastapi.io
-   - Ankr: https://www.ankr.com/rpc/
-
-   Update your `.env`:
-
-   ```bash
-   CHAIN_RPC_ENDPOINT=wss://YOUR_PRIVATE_RPC_ENDPOINT
-   ```
-
-2. **Skip initial state loading**: Start indexing from current block instead of block 0:
-
-   - Comment out the state loading logic in `src/processor/index.ts`
-   - Note: You'll miss historical data but avoid RPC issues
-
-3. **Use archive-only mode**: Let the indexer run without initial state loading. It will catch up over time by processing events.
 
 ## Example Query
 

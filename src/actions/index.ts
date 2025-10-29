@@ -252,7 +252,7 @@ export async function handleDelegation(
   cache: EntityCache,
   blockNumber: number,
   delegatorBytes: Uint8Array,
-  collatorBytes: Uint8Array,
+  _collatorBytes: Uint8Array,
   amount: bigint
 ): Promise<void> {
   const staker = await cache.getStaker(delegatorBytes, blockNumber);
@@ -263,7 +263,7 @@ export async function handleDelegationRevoked(
   cache: EntityCache,
   blockNumber: number,
   delegatorBytes: Uint8Array,
-  collatorBytes: Uint8Array,
+  _collatorBytes: Uint8Array,
   amount: bigint
 ): Promise<void> {
   const staker = await cache.getStaker(delegatorBytes, blockNumber);
@@ -287,7 +287,7 @@ export async function handleDelegationIncreased(
   cache: EntityCache,
   blockNumber: number,
   delegatorBytes: Uint8Array,
-  collatorBytes: Uint8Array,
+  _collatorBytes: Uint8Array,
   amount: bigint
 ): Promise<void> {
   const staker = await cache.getStaker(delegatorBytes, blockNumber);
@@ -298,7 +298,7 @@ export async function handleDelegationDecreased(
   cache: EntityCache,
   blockNumber: number,
   delegatorBytes: Uint8Array,
-  collatorBytes: Uint8Array,
+  _collatorBytes: Uint8Array,
   amount: bigint
 ): Promise<void> {
   const staker = await cache.getStaker(delegatorBytes, blockNumber);
@@ -309,7 +309,7 @@ export async function handleDelegationKicked(
   cache: EntityCache,
   blockNumber: number,
   delegatorBytes: Uint8Array,
-  collatorBytes: Uint8Array,
+  _collatorBytes: Uint8Array,
   amount: bigint
 ): Promise<void> {
   const staker = await cache.getStaker(delegatorBytes, blockNumber);
@@ -320,7 +320,7 @@ export async function handleCompounded(
   cache: EntityCache,
   blockNumber: number,
   delegatorBytes: Uint8Array,
-  candidateBytes: Uint8Array,
+  _candidateBytes: Uint8Array,
   amount: bigint
 ): Promise<void> {
   const staker = await cache.getStaker(delegatorBytes, blockNumber);
@@ -373,10 +373,10 @@ export async function handleJoinedCollatorCandidates(
 export async function handleCandidateLeft(
   cache: EntityCache,
   blockNumber: number,
-  exCandidateBytes: Uint8Array,
+  candidateBytes: Uint8Array,
   unlockedAmount: bigint
 ): Promise<void> {
-  const collator = await cache.getCollator(exCandidateBytes, blockNumber);
+  const collator = await cache.getCollator(candidateBytes, blockNumber);
   await updateCollatorAmounts(cache, collator, unlockedAmount, false, blockNumber);
 }
 

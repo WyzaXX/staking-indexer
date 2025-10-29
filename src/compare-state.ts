@@ -1,12 +1,8 @@
 import { ApiPromise, WsProvider } from '@polkadot/api';
 import { DataSource } from 'typeorm';
 import { Staker, Collator } from './model';
-import { encodeAddressToSS58 } from './utils';
+import { encodeAddressToSS58, getTokenSymbol } from './utils';
 import * as fs from 'fs';
-
-function formatGlmr(amount: bigint): string {
-  return (Number(amount) / 1e18).toLocaleString('en-US', { maximumFractionDigits: 2 });
-}
 
 interface ChainStaker {
   address: string;
@@ -55,22 +51,22 @@ interface ComparisonResult {
 }
 
 export async function compareChainStateWithIndexer(rpcEndpoint: string): Promise<void> {
-  console.log('🔍 Comparing chain state with indexer database...\n');
+  const tokenSymbol = getTokenSymbol();
+  console.log('Comparing chain state with indexer database...\n');
 
-  // 1. Query chain state
-  console.log('📡 Step 1: Querying chain state via RPC...');
+  console.log('Step 1: Querying chain state via RPC...');
   const provider = new WsProvider(rpcEndpoint);
   const api = await ApiPromise.create({ provider });
 
   const header = await api.rpc.chain.getHeader();
   const blockNumber = header.number.toNumber();
-  console.log(`   Current block: ${blockNumber.toLocaleString()}`);
+  console.log(`Current block: ${blockNumber.toLocaleString()}`);
 
   const delegatorStates = await api.query.parachainStaking.delegatorState.entries();
-  console.log(`   Found ${delegatorStates.length} delegators in chain`);
+  console.log(`Found ${delegatorStates.length} delegators in chain`);
 
   const candidateInfos = await api.query.parachainStaking.candidateInfo.entries();
-  console.log(`   Found ${candidateInfos.length} collators in chain`);
+  console.log(`Found ${candidateInfos.length} collators in chain`);
 
   const chainStakers: ChainStaker[] = [];
   let chainTotalDelegatorStake = 0n;
@@ -115,10 +111,9 @@ export async function compareChainStateWithIndexer(rpcEndpoint: string): Promise
   }
 
   await api.disconnect();
-  console.log('   ✅ Chain state loaded\n');
+  console.log('Chain state loaded\n');
 
-  // 2. Query indexer database
-  console.log('💾 Step 2: Querying indexer database...');
+  console.log('Step 2: Querying indexer database...');
   const dataSource = new DataSource({
     type: 'postgres',
     host: process.env.DB_HOST || 'localhost',
@@ -174,12 +169,11 @@ export async function compareChainStateWithIndexer(rpcEndpoint: string): Promise
   const indexerTotalDelegatorStake = indexerStakers.reduce((sum: bigint, s: IndexerStaker) => sum + s.stakedAmount, 0n);
   const indexerTotalCollatorBond = indexerCollators.reduce((sum: bigint, c: IndexerCollator) => sum + c.selfBond, 0n);
 
-  console.log(`   Found ${indexerStakers.length} stakers in indexer`);
-  console.log(`   Found ${indexerCollators.length} collators in indexer`);
-  console.log('   ✅ Indexer data loaded\n');
+  console.log(`Found ${indexerStakers.length} stakers in indexer`);
+  console.log(`Found ${indexerCollators.length} collators in indexer`);
+  console.log('Indexer data loaded\n');
 
-  // 3. Compare
-  console.log('🔬 Step 3: Analyzing differences...\n');
+  console.log('Step 3: Analyzing differences...\n');
 
   const chainStakerMap = new Map(chainStakers.map((s) => [s.address, s]));
   const indexerStakerMap = new Map(indexerStakers.map((s) => [s.id, s]));
@@ -295,51 +289,51 @@ export async function compareChainStateWithIndexer(rpcEndpoint: string): Promise
     },
   };
 
-  // Save to file
   const filename = `state-comparison-${Date.now()}.json`;
   fs.writeFileSync(filename, JSON.stringify(result, null, 2));
-  console.log(`📄 Full comparison saved to: ${filename}\n`);
+  console.log(`Full comparison saved to: ${filename}\n`);
 
-  // Print summary
-  console.log('📊 COMPARISON SUMMARY:');
-  console.log('═══════════════════════════════════════════════════════════\n');
+  console.log('COMPARISON SUMMARY:');
+  console.log('================================================================\n');
 
-  console.log('🔵 DELEGATORS:');
+  console.log('DELEGATORS:');
   console.log(
-    `   Chain:   ${chainStakers.length.toLocaleString()} stakers, ${(
+    `Chain:   ${chainStakers.length.toLocaleString()} stakers, ${(
       Number(chainTotalDelegatorStake) / 1e18
-    ).toLocaleString()} GLMR`
+    ).toLocaleString()} ${tokenSymbol}`
   );
   console.log(
-    `   Indexer: ${indexerStakers.filter((s) => s.stakedAmount > 0n).length.toLocaleString()} stakers, ${(
+    `Indexer: ${indexerStakers.filter((s) => s.stakedAmount > 0n).length.toLocaleString()} stakers, ${(
       Number(indexerTotalDelegatorStake) / 1e18
-    ).toLocaleString()} GLMR`
+    ).toLocaleString()} ${tokenSymbol}`
   );
   console.log(
-    `   Diff:    ${(Number(chainTotalDelegatorStake - indexerTotalDelegatorStake) / 1e18).toLocaleString()} GLMR\n`
+    `Diff:    ${(
+      Number(chainTotalDelegatorStake - indexerTotalDelegatorStake) / 1e18
+    ).toLocaleString()} ${tokenSymbol}\n`
   );
 
-  console.log(`   ❌ Missing in indexer: ${stakersMissingInIndexer.length.toLocaleString()} accounts`);
+  console.log(`Missing in indexer: ${stakersMissingInIndexer.length.toLocaleString()} accounts`);
   if (stakersMissingInIndexer.length > 0) {
     const missingStake = stakersMissingInIndexer.reduce((sum, s) => sum + BigInt(s.stakedAmount), 0n);
-    console.log(`      Total missing stake: ${(Number(missingStake) / 1e18).toLocaleString()} GLMR`);
-    console.log(`      Top 5 missing accounts:`);
+    console.log(`  Total missing stake: ${(Number(missingStake) / 1e18).toLocaleString()} ${tokenSymbol}`);
+    console.log(`  Top 5 missing accounts:`);
     stakersMissingInIndexer
       .sort((a, b) => Number(BigInt(b.stakedAmount) - BigInt(a.stakedAmount)))
       .slice(0, 5)
       .forEach((s) => {
-        console.log(`        ${s.address}: ${(Number(BigInt(s.stakedAmount)) / 1e18).toLocaleString()} GLMR`);
+        console.log(`    ${s.address}: ${(Number(BigInt(s.stakedAmount)) / 1e18).toLocaleString()} ${tokenSymbol}`);
       });
   }
 
-  console.log(`\n   ⚠️  Only in indexer: ${stakersOnlyInIndexer.length.toLocaleString()} accounts`);
+  console.log(`\nOnly in indexer: ${stakersOnlyInIndexer.length.toLocaleString()} accounts`);
   if (stakersOnlyInIndexer.length > 0 && stakersOnlyInIndexer.length <= 10) {
-    stakersOnlyInIndexer.forEach((addr) => console.log(`        ${addr}`));
+    stakersOnlyInIndexer.forEach((addr) => console.log(`  ${addr}`));
   }
 
-  console.log(`\n   📊 Amount differences: ${stakerAmountDifferences.length.toLocaleString()} accounts`);
+  console.log(`\nAmount differences: ${stakerAmountDifferences.length.toLocaleString()} accounts`);
   if (stakerAmountDifferences.length > 0) {
-    console.log(`      Top 5 by absolute difference:`);
+    console.log(`  Top 5 by absolute difference:`);
     stakerAmountDifferences
       .sort((a, b) => {
         const absA = BigInt(a.difference) < 0n ? -BigInt(a.difference) : BigInt(a.difference);
@@ -349,51 +343,51 @@ export async function compareChainStateWithIndexer(rpcEndpoint: string): Promise
       .slice(0, 5)
       .forEach((d) => {
         const diffGlmr = Number(BigInt(d.difference)) / 1e18;
-        console.log(`        ${d.address}: ${diffGlmr > 0 ? '+' : ''}${diffGlmr.toLocaleString()} GLMR`);
+        console.log(`    ${d.address}: ${diffGlmr > 0 ? '+' : ''}${diffGlmr.toLocaleString()} ${tokenSymbol}`);
       });
   }
 
-  console.log('\n🟢 COLLATORS:');
+  console.log('\nCOLLATORS:');
   console.log(
-    `   Chain:   ${chainCollators.length.toLocaleString()} collators, ${(
+    `Chain:   ${chainCollators.length.toLocaleString()} collators, ${(
       Number(chainTotalCollatorBond) / 1e18
-    ).toLocaleString()} GLMR`
+    ).toLocaleString()} ${tokenSymbol}`
   );
   console.log(
-    `   Indexer: ${indexerCollators.filter((c) => c.selfBond > 0n).length.toLocaleString()} collators, ${(
+    `Indexer: ${indexerCollators.filter((c) => c.selfBond > 0n).length.toLocaleString()} collators, ${(
       Number(indexerTotalCollatorBond) / 1e18
-    ).toLocaleString()} GLMR`
+    ).toLocaleString()} ${tokenSymbol}`
   );
   console.log(
-    `   Diff:    ${(Number(chainTotalCollatorBond - indexerTotalCollatorBond) / 1e18).toLocaleString()} GLMR\n`
+    `Diff:    ${(Number(chainTotalCollatorBond - indexerTotalCollatorBond) / 1e18).toLocaleString()} ${tokenSymbol}\n`
   );
 
-  console.log(`   ❌ Missing in indexer: ${collatorsMissingInIndexer.length.toLocaleString()} collators`);
+  console.log(`Missing in indexer: ${collatorsMissingInIndexer.length.toLocaleString()} collators`);
   if (collatorsMissingInIndexer.length > 0) {
     const missingBond = collatorsMissingInIndexer.reduce((sum, c) => sum + BigInt(c.selfBond), 0n);
-    console.log(`      Total missing bond: ${(Number(missingBond) / 1e18).toLocaleString()} GLMR`);
+    console.log(`  Total missing bond: ${(Number(missingBond) / 1e18).toLocaleString()} ${tokenSymbol}`);
     collatorsMissingInIndexer.forEach((c) => {
-      console.log(`        ${c.address}: ${(Number(BigInt(c.selfBond)) / 1e18).toLocaleString()} GLMR`);
+      console.log(`    ${c.address}: ${(Number(BigInt(c.selfBond)) / 1e18).toLocaleString()} ${tokenSymbol}`);
     });
   }
 
-  console.log(`\n   ⚠️  Only in indexer: ${collatorsOnlyInIndexer.length.toLocaleString()} collators`);
+  console.log(`\nOnly in indexer: ${collatorsOnlyInIndexer.length.toLocaleString()} collators`);
   if (collatorsOnlyInIndexer.length > 0) {
     collatorsOnlyInIndexer.forEach((addr) => {
       const collator = indexerCollatorMap.get(addr);
-      console.log(`        ${addr}: ${(Number(collator!.selfBond) / 1e18).toLocaleString()} GLMR`);
+      console.log(`  ${addr}: ${(Number(collator!.selfBond) / 1e18).toLocaleString()} ${tokenSymbol}`);
     });
   }
 
-  console.log(`\n   📊 Amount differences: ${collatorAmountDifferences.length.toLocaleString()} collators`);
+  console.log(`\nAmount differences: ${collatorAmountDifferences.length.toLocaleString()} collators`);
   if (collatorAmountDifferences.length > 0) {
     collatorAmountDifferences.forEach((d) => {
       const diffGlmr = Number(BigInt(d.difference)) / 1e18;
-      console.log(`        ${d.address}: ${diffGlmr > 0 ? '+' : ''}${diffGlmr.toLocaleString()} GLMR`);
+      console.log(`  ${d.address}: ${diffGlmr > 0 ? '+' : ''}${diffGlmr.toLocaleString()} ${tokenSymbol}`);
     });
   }
 
-  console.log('\n═══════════════════════════════════════════════════════════');
+  console.log('\n================================================================');
 
   await dataSource.destroy();
 }
