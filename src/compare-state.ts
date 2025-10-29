@@ -127,7 +127,6 @@ export async function compareChainStateWithIndexer(rpcEndpoint: string): Promise
 
   await dataSource.initialize();
 
-  // Query using raw SQL to avoid camelCase/snake_case issues
   const indexerStakersRaw = await dataSource.query(`
     SELECT id, staked_amount, total_delegated, total_undelegated 
     FROM staker

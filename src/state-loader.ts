@@ -237,7 +237,6 @@ export async function loadCurrentChainState(
       }
     }
 
-    // Initialize database connection
     const dataSource = new DataSource({
       type: 'postgres',
       host: process.env.DB_HOST || 'localhost',
