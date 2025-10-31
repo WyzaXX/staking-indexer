@@ -7,7 +7,8 @@
     "node": ">=24"
   },
   "scripts": {
-    "build": "rm -rf lib && tsc"
+    "build": "rm -rf lib && tsc",
+    "start": "bash scripts/init.sh"
   },
   "dependencies": {
     "@belopash/typeorm-store": "^1.5.0",

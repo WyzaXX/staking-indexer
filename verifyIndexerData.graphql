@@ -17,6 +17,7 @@ query VerifyIndexerData {
   topStakers: stakers(first: 5, orderBy: STAKED_AMOUNT_DESC) {
     nodes {
       id
+      scheduledUnbonds
       stakedAmount
       totalDelegated
       totalUndelegated
@@ -26,6 +27,7 @@ query VerifyIndexerData {
   topCollators: collators(first: 5, orderBy: SELF_BOND_DESC) {
     nodes {
       id
+      scheduledUnbonds
       selfBond
       totalBonded
       totalUnbonded
