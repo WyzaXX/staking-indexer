@@ -66,7 +66,7 @@
     },
     "serve": {
       "description": "Start both processor and API server together",
-      "deps": ["build", "migration:apply"],
+      "deps": ["build"],
       "cmd": [
         "sh",
         "-c",
@@ -101,12 +101,16 @@
       "cmd": [
         "sh",
         "-c",
-        "lsof -ti:4350 | xargs kill -9 2>/dev/null || true && docker-compose down -v && rm -rf db/migrations/*.js && docker-compose up -d && sleep 3 && sqd migration:generate && sqd serve"
+        "lsof -ti:4350 | xargs kill -9 2>/dev/null || true && docker-compose down -v && rm -rf db/migrations/*.js && docker-compose up -d && sleep 3 && sqd migration:generate && sqd migration:apply && sqd serve"
       ]
     },
     "open": {
       "description": "Open a local browser window",
       "cmd": ["npx", "--yes", "opener", "http://localhost:4350/graphiql"]
+    },
+    "start": {
+      "description": "Complete setup and start indexer (first-time or fresh start)",
+      "cmd": ["bash", "scripts/init.sh"]
     }
   }
 }
