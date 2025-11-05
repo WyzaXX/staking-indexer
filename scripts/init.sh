@@ -18,13 +18,22 @@ echo "Chain: ${CHAIN:-unknown} | RPC: ${CHAIN_RPC_ENDPOINT:-not set}"
 [ ! -d "node_modules" ] && npm install
 
 # Start PostgreSQL if not running
-if ! (docker-compose ps 2>/dev/null | grep -q "postgres.*Up" || pg_isready -h $DB_HOST -p $DB_PORT &>/dev/null); then
+if ! docker-compose ps 2>/dev/null | grep -q "postgres.*Up"; then
     docker-compose up -d && sleep 3
 fi
 
-# Create database using .env values
-PGPASSWORD=$DB_PASS psql -h $DB_HOST -p $DB_PORT -U $DB_USER -tc "SELECT 1 FROM pg_database WHERE datname = '$DB_NAME'" | grep -q 1 || \
-PGPASSWORD=$DB_PASS psql -h $DB_HOST -p $DB_PORT -U $DB_USER -c "CREATE DATABASE $DB_NAME"
+# Wait for PostgreSQL to be ready
+echo "Waiting for PostgreSQL..."
+until docker-compose exec -T db pg_isready -U ${DB_USER:-postgres} &>/dev/null; do
+    sleep 1
+done
+
+# Create database inside Docker container
+DB_EXISTS=$(docker-compose exec -T db psql -U ${DB_USER:-postgres} -tc "SELECT 1 FROM pg_database WHERE datname = '${DB_NAME:-staking}'" | grep -c 1 || echo "0")
+if [ "$DB_EXISTS" = "0" ]; then
+    docker-compose exec -T db psql -U ${DB_USER:-postgres} -c "CREATE DATABASE ${DB_NAME:-staking}"
+    echo "Database '${DB_NAME:-staking}' created"
+fi
 
 # Build, migrate, and start
 rm -rf lib && tsc

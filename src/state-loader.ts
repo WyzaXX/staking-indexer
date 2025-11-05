@@ -39,11 +39,7 @@ async function retryWithBackoff<T>(
   throw lastError;
 }
 
-export async function loadCurrentChainState(
-  rpcEndpoint: string,
-  totalSupply: bigint,
-  targetBlockNumber?: number
-): Promise<void> {
+export async function loadCurrentChainState(rpcEndpoint: string, targetBlockNumber?: number): Promise<void> {
   const tokenSymbol = getTokenSymbol();
   console.log('Loading chain state from RPC...');
   console.log(`RPC: ${rpcEndpoint}`);
@@ -250,6 +246,10 @@ export async function loadCurrentChainState(
 
     await dataSource.initialize();
     console.log('Database connected');
+
+    const existingTotalStake = await dataSource.query('SELECT total_supply FROM total_stake WHERE id = $1', ['total']);
+    const totalSupply = existingTotalStake.length > 0 ? BigInt(existingTotalStake[0].total_supply) : 0n;
+    console.log(`Using total supply from database: ${(Number(totalSupply) / 1e18).toFixed(3)} ${tokenSymbol}`);
 
     let totalDelegatorStake = 0n;
     let totalCollatorBond = 0n;

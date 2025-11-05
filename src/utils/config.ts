@@ -42,7 +42,7 @@ export const config = {
     rpcEndpoint: getEnv('CHAIN_RPC_ENDPOINT')!,
     archiveGateway: getEnv('ARCHIVE_GATEWAY', false),
     ss58Prefix: getEnvNumber('SS58_PREFIX'),
-    totalSupply: BigInt((getEnv('TOTAL_SUPPLY', false) || '0').toString()),
+    totalSupply: getEnv('TOTAL_SUPPLY', false) ? BigInt(getEnv('TOTAL_SUPPLY', false)!.toString()) : undefined,
   },
 
   blockRange: {

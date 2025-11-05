@@ -72,7 +72,7 @@ export class EntityCache {
     let totalStake = await this.ctx.store.get(TotalStake, TOTAL_STAKE_ID);
 
     if (!totalStake) {
-      const totalSupply = config.chain.totalSupply;
+      const totalSupply = config.chain.totalSupply || 0n;
       totalStake = new TotalStake({
         id: TOTAL_STAKE_ID,
         totalStaked: 0n,
