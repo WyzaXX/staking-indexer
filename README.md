@@ -44,9 +44,9 @@ Edit `.env` file (auto-created by `sqd start`):
 ```bash
 CHAIN=qustream
 CHAIN_RPC_ENDPOINT=ws://127.0.0.1:8800
-TOKEN_SYMBOL=QSTR
+TOKEN_SYMBOL=QST
 TOKEN_DECIMALS=18
-SS58_PREFIX=1287
+SS58_PREFIX=5041
 ```
 
 For custom chains, manually edit `.env` with your config.
