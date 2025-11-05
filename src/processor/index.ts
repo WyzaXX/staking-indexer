@@ -5,6 +5,7 @@ import { fieldSelection, ProcessorContext } from './types';
 import { handleEvent } from '../handlers';
 import { EntityCache } from '../actions';
 import { loadCurrentChainState } from '../state-loader';
+import { fetchAndUpdateTotalSupply } from '../utils';
 
 const ARCHIVE_GATEWAYS: Record<string, string> = {
   moonbeam: 'https://v2.archive.subsquid.io/network/moonbeam-substrate',
@@ -75,6 +76,9 @@ function createProcessor(withArchive: boolean): SubstrateBatchProcessor {
 }
 
 let processor = createProcessor(useArchive);
+let totalSupplyInitialized = false;
+let lastTotalSupplyUpdate = 0;
+const TOTAL_SUPPLY_UPDATE_INTERVAL = 10 * 60 * 1000;
 
 async function runWithArchiveFallback() {
   const database = new TypeormDatabase({
@@ -84,6 +88,14 @@ async function runWithArchiveFallback() {
 
   try {
     await processor.run(database, async (ctx: ProcessorContext) => {
+      const now = Date.now();
+
+      if (!totalSupplyInitialized || now - lastTotalSupplyUpdate > TOTAL_SUPPLY_UPDATE_INTERVAL) {
+        await fetchAndUpdateTotalSupply(config.chain.rpcEndpoint).catch(() => {});
+        totalSupplyInitialized = true;
+        lastTotalSupplyUpdate = now;
+      }
+
       const firstBlock = ctx.blocks[0]?.header.height;
       const lastBlock = ctx.blocks[ctx.blocks.length - 1]?.header.height;
       const blockRange = lastBlock - firstBlock + 1;
@@ -115,11 +127,10 @@ async function runWithArchiveFallback() {
             wsEndpoint = wsEndpoint.replace('https://', 'wss://');
           }
 
-          const totalSupply = BigInt(process.env.TOTAL_SUPPLY || '1200000000000000000000000000');
           const targetBlock = lastBlock;
 
           try {
-            await loadCurrentChainState(wsEndpoint, totalSupply, targetBlock);
+            await loadCurrentChainState(wsEndpoint, targetBlock);
             stateMerged = true;
             console.log('Chain state merged successfully, continuing indexing...');
             console.log('');
